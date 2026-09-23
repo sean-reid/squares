@@ -10,7 +10,7 @@ const TOL: f64 = 1e-9;
 
 fn solved(map: &Map) -> Vec<f64> {
     let mut pot = vec![0.5; map.vertex_capacity()];
-    solve(map, &mut pot, 1e-13, 100_000);
+    solve(map, &mut pot);
     pot
 }
 
