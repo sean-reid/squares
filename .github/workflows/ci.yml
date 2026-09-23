@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: format
+        run: cargo fmt --check
+        working-directory: core
+      - name: clippy
+        run: cargo clippy --all-targets --features cli -- -D warnings
+        working-directory: core
+      - name: test
+        run: cargo test --release
+        working-directory: core
+      - name: wasm build
+        run: cargo build --release --target wasm32-unknown-unknown --features wasm
+        working-directory: core
