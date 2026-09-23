@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>squares</title>
+    <meta
+      name="description"
+      content="A photo as a simple squared rectangle, computed in your browser."
+    />
+    <meta property="og:title" content="squares" />
+    <meta
+      property="og:description"
+      content="A photo as a simple squared rectangle, computed in your browser."
+    />
+    <meta property="og:image" content="https://squares.dwainosaur.com/preview.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="/fonts/familjen-grotesk-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <header>
+      <span class="wordmark">squares</span>
+    </header>
+    <main>
+      <div class="stage" id="stage" tabindex="0" role="button" aria-label="Choose an image">
+        <canvas id="canvas" hidden></canvas>
+        <p class="hint" id="hint">Drop an image, or click to choose one.</p>
+        <input type="file" id="file" accept="image/*" hidden />
+      </div>
+      <p class="note" id="note" hidden></p>
+      <div class="controls" id="controls" hidden>
+        <label class="density">
+          <span class="count"><output id="count">300</output> squares</span>
+          <input
+            type="range"
+            id="density"
+            min="0"
+            max="1000"
+            value="556"
+            aria-label="Number of squares"
+          />
+        </label>
+        <span class="status" id="status" aria-live="polite"></span>
+        <span class="spacer"></span>
+        <button type="button" id="reshuffle">reshuffle</button>
+        <label class="toggle"><input type="checkbox" id="gaps" /> gaps</label>
+        <button type="button" id="compare">hold to compare</button>
+        <button type="button" id="svg">svg</button>
+        <span class="png">
+          <button type="button" id="png">png</button>
+          <select id="pngsize" aria-label="PNG width in pixels">
+            <option value="1024">1024</option>
+            <option value="2048" selected>2048</option>
+            <option value="4096">4096</option>
+          </select>
+        </span>
+        <button type="button" id="another">new image</button>
+      </div>
+    </main>
+    <footer>
+      <a href="https://github.com/sean-reid/squares">source</a>
+      <a href="https://en.wikipedia.org/wiki/Squaring_the_square">squaring the rectangle</a>
+    </footer>
+  </body>
+</html>

@@ -6,6 +6,7 @@ use crate::rng::Rng;
 use crate::seed::seed_map;
 use crate::solve::solve;
 use crate::target::{Frame, Target};
+use std::rc::Rc;
 
 /// Tiling units; the tiling is 1 tall.
 const CROSS_EPS: f64 = 1e-7;
@@ -82,7 +83,7 @@ struct State {
 }
 
 pub struct Search {
-    target: Target,
+    target: Rc<Target>,
     params: Params,
     rng: Rng,
     state: State,
@@ -98,7 +99,7 @@ pub struct Search {
 }
 
 impl Search {
-    pub fn new(target: Target, params: Params, seed: u64) -> Search {
+    pub fn new(target: Rc<Target>, params: Params, seed: u64) -> Search {
         let map = seed_map();
         let mut pot = vec![0.5; map.vertex_capacity()];
         let mut s = Search {
@@ -169,6 +170,10 @@ impl Search {
 
     pub fn target(&self) -> &Target {
         &self.target
+    }
+
+    pub fn frame(&self) -> Frame {
+        self.state.frame
     }
 
     /// Tiling units per target pixel. The tiling is 1 tall and maps onto at
