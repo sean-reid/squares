@@ -53,6 +53,19 @@ test('renders a photo as a tiling and exports it', async ({ page }, info) => {
   expect((await png).suggestedFilename()).toMatch(/^squares-\d+\.png$/);
 });
 
+test('the wordmark returns to the empty page', async ({ page }) => {
+  await page.goto('/');
+  const buffer = await testImage(page);
+  await page.locator('#file').setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer });
+  await expect(page.locator('#controls')).toBeVisible();
+  await page.getByRole('link', { name: 'squares' }).click();
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('#controls')).toBeHidden();
+  await expect(page.locator('#canvas')).toBeHidden();
+  await expect(page.getByText(/choose/)).toBeVisible();
+  await expect(page.locator('#stage')).toHaveAttribute('role', 'button');
+});
+
 test('a file that does not decode gets one plain line', async ({ page }) => {
   await page.goto('/');
   await page

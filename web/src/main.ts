@@ -19,6 +19,7 @@ const svgButton = $<HTMLButtonElement>('svg');
 const pngButton = $<HTMLButtonElement>('png');
 const pngSize = $<HTMLSelectElement>('pngsize');
 const another = $<HTMLButtonElement>('another');
+const home = $<HTMLAnchorElement>('home');
 
 const MIN_SQUARES = 40;
 const MAX_SQUARES = 1500;
@@ -31,6 +32,7 @@ const toCount = (v: number) =>
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 const send = (m: ToWorker, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
 const renderer = new Renderer(canvas);
+renderer.onAspect = (a) => stage.style.setProperty('--aspect', a.toFixed(4));
 
 let photo: ImageBitmap | null = null;
 let seed = 1;
@@ -66,6 +68,7 @@ async function load(f: File) {
   photo = await createImageBitmap(off);
   renderer.photo = photo;
   renderer.clear();
+  renderer.setView(w / h);
   stage.classList.add('has-image');
   stage.removeAttribute('role');
   stage.removeAttribute('aria-label');
@@ -87,15 +90,14 @@ worker.onmessage = (ev: MessageEvent<FromWorker>) => {
   const m = ev.data;
   switch (m.type) {
     case 'state':
-      stage.style.setProperty('--aspect', String(m.width));
       renderer.frame = m.frame;
-      renderer.fit();
       renderer.update(m.squares, m.width);
       lastCount = m.count;
       status.textContent = m.stage < 2 ? 'growing' : m.stage === 2 ? 'refining' : '';
       break;
     case 'done':
       status.textContent = '';
+      renderer.settleView();
       break;
     case 'svg':
       download(new Blob([m.svg], { type: 'image/svg+xml' }), `squares-${lastCount}.svg`);
@@ -104,6 +106,30 @@ worker.onmessage = (ev: MessageEvent<FromWorker>) => {
       break;
   }
 };
+
+/** Back to the empty page, as if freshly loaded. */
+function reset() {
+  send({ type: 'stop' });
+  photo?.close();
+  photo = null;
+  renderer.photo = null;
+  renderer.clear();
+  stage.classList.remove('has-image', 'drag');
+  stage.style.removeProperty('--aspect');
+  stage.setAttribute('role', 'button');
+  stage.setAttribute('aria-label', 'Choose an image');
+  stage.tabIndex = 0;
+  canvas.hidden = true;
+  hint.hidden = false;
+  note.hidden = true;
+  controls.hidden = true;
+  status.textContent = '';
+  lastCount = 0;
+}
+home.addEventListener('click', (e) => {
+  e.preventDefault();
+  reset();
+});
 
 const pick = () => file.click();
 stage.addEventListener('click', () => {
