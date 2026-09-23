@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/sean-reid/squares/compare/v0.1.1...v0.1.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* **core:** factor once, answer candidates by rank-one updates ([#10](https://github.com/sean-reid/squares/issues/10)) ([083bb20](https://github.com/sean-reid/squares/commit/083bb20c0f5728efc1ccd58a6d8b405448035fc5))
+
 ## [0.1.1](https://github.com/sean-reid/squares/compare/v0.1.0...v0.1.1) (2026-09-23)
 
 
