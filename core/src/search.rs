@@ -336,7 +336,7 @@ impl Search {
     /// runs out. Image error plays no part here.
     fn seed_step(&mut self) -> bool {
         let budget = (self.params.squares / 3).clamp(9, 40);
-        if self.in_band() || self.state.map.edge_count() - 1 >= budget {
+        if self.in_band() || self.state.map.edge_count() > budget {
             self.stage = Stage::Growing;
             return false;
         }
@@ -365,7 +365,7 @@ impl Search {
     }
 
     fn grow_step(&mut self) -> bool {
-        if self.state.map.edge_count() - 1 >= self.params.squares {
+        if self.state.map.edge_count() > self.params.squares {
             self.stage = Stage::Refining;
             return false;
         }
@@ -396,7 +396,7 @@ impl Search {
                     continue;
                 };
                 if let Some(st) = self.try_move(mv) {
-                    if best.as_ref().map_or(true, |(b, _)| st.cost < b.cost) {
+                    if best.as_ref().is_none_or(|(b, _)| st.cost < b.cost) {
                         best = Some((st, mv));
                     }
                 }

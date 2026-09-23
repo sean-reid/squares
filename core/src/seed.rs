@@ -10,8 +10,8 @@ pub fn squares_from_bouwkamp(width: u32, sizes: &[u32]) -> Vec<(u32, u32, u32)> 
         let low = *skyline.iter().min().unwrap();
         let x = skyline.iter().position(|&h| h == low).unwrap();
         out.push((x as u32, low, s));
-        for c in x..x + s as usize {
-            skyline[c] = low + s;
+        for h in &mut skyline[x..x + s as usize] {
+            *h = low + s;
         }
     }
     out

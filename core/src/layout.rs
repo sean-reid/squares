@@ -194,10 +194,10 @@ pub fn layout(
             }
         };
     }
-    for i in 0..order.len() {
-        let a = order[i] as usize;
-        for j in (i + 1)..order.len() {
-            let b = order[j] as usize;
+    for (i, &oa) in order.iter().enumerate() {
+        let a = oa as usize;
+        for &ob in &order[i + 1..] {
+            let b = ob as usize;
             if pot[b] - pot[a] >= cross_eps {
                 break;
             }
