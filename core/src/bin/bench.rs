@@ -58,7 +58,7 @@ fn main() {
         ..dflt
     };
     let t1 = Instant::now();
-    let mut s = Search::new(target, params, seed);
+    let mut s = Search::new(std::rc::Rc::new(target), params, seed);
     let mut steps = 0;
     while s.stage() == Stage::Seeding && steps < 100_000 {
         s.step();

@@ -9,6 +9,8 @@ pub mod seed;
 pub mod solve;
 pub mod svg;
 pub mod target;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use geometry::Square;
 pub use search::{Search, Stage};
