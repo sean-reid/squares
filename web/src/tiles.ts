@@ -218,21 +218,43 @@ export class Renderer {
     }
     order.sort((a, b) => b.side - a.side);
     const inset = this.gap ? Math.max(0.5, 0.5 * (devicePixelRatio || 1)) : 0;
+    // While squares are moving, the arrangement they are moving toward sits
+    // underneath, so a gap between them shows the incoming color rather than
+    // the page.
+    if (live) {
+      for (const t of order) {
+        if (t.dying) continue;
+        this.rect(t.tx, t.ty, t.tside, t.tr, t.tg, t.tb, scale, inset);
+      }
+    }
     for (const t of order) {
-      const px = t.x * scale + inset;
-      const py = t.y * scale + inset;
-      const ps = t.side * scale - 2 * inset;
-      if (ps <= 0) continue;
-      ctx.fillStyle = `rgb(${t.r | 0} ${t.g | 0} ${t.b | 0})`;
-      if (this.gap) ctx.fillRect(px, py, ps, ps);
-      else
-        ctx.fillRect(
-          Math.round(px),
-          Math.round(py),
-          Math.max(1, Math.round(px + ps) - Math.round(px)),
-          Math.max(1, Math.round(py + ps) - Math.round(py)),
-        );
+      this.rect(t.x, t.y, t.side, t.r, t.g, t.b, scale, inset);
     }
     if (live) this.schedule();
+  }
+
+  private rect(
+    x: number,
+    y: number,
+    side: number,
+    r: number,
+    g: number,
+    b: number,
+    scale: number,
+    inset: number,
+  ) {
+    const px = x * scale + inset;
+    const py = y * scale + inset;
+    const ps = side * scale - 2 * inset;
+    if (ps <= 0) return;
+    this.ctx.fillStyle = `rgb(${r | 0} ${g | 0} ${b | 0})`;
+    if (this.gap) this.ctx.fillRect(px, py, ps, ps);
+    else
+      this.ctx.fillRect(
+        Math.round(px),
+        Math.round(py),
+        Math.max(1, Math.round(px + ps) - Math.round(px)),
+        Math.max(1, Math.round(py + ps) - Math.round(py)),
+      );
   }
 }
