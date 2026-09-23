@@ -21,11 +21,5 @@
     "wrangler": "^4.40.0",
     "@types/node": "^24.0.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "workerd"
-    ]
-  },
   "packageManager": "pnpm@12.5.1"
 }
