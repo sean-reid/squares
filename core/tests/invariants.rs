@@ -1,7 +1,7 @@
 use squares_core::geometry::{find_subrectangle, has_cross, tiles_rectangle};
 use squares_core::layout::layout;
 use squares_core::map::Map;
-use squares_core::moves::{apply, grow_near, shrink};
+use squares_core::moves::{apply, grow_near, shrink, Grow};
 use squares_core::rng::Rng;
 use squares_core::seed::{scaled, seed_map, seed_squares};
 use squares_core::solve::solve;
@@ -19,7 +19,7 @@ fn check_all(map: &mut Map, context: &str) -> bool {
         .unwrap_or_else(|e| panic!("{}: {}", context, e));
     assert!(map.is_three_connected(), "{}: not 3-connected", context);
     let pot = solved(map);
-    let Some((squares, width)) = layout(map, &pot, 1e-9) else {
+    let Ok((squares, width)) = layout(map, &pot, 1e-9, 1e-9) else {
         return false;
     };
     tiles_rectangle(&squares, width, 1e-7).unwrap_or_else(|e| panic!("{}: {}", context, e));
@@ -41,7 +41,7 @@ fn seed_round_trips_through_solve_and_layout() {
     assert_eq!(map.vertex_count(), 6);
     check_all(&mut map, "seed");
     let pot = solved(&map);
-    let (squares, width) = layout(&map, &pot, 1e-9).unwrap();
+    let (squares, width) = layout(&map, &pot, 1e-9, 1e-9).unwrap();
     assert!((width - 32.0 / 33.0).abs() < TOL);
     let (_, h, sq) = seed_squares();
     let expected = scaled(&sq, h);
@@ -69,7 +69,7 @@ fn random_moves_keep_every_invariant() {
         while applied < 30 {
             let live = map.live_edge_ids();
             let e = live[1 + rng.below(live.len() as u32 - 1) as usize];
-            let Some(mv) = grow_near(&map, e, &mut rng) else {
+            let Some(mv) = grow_near(&map, &solved(&map), e, Grow::Any, 0.0, &mut rng) else {
                 continue;
             };
             let mut next = map.clone();
@@ -132,7 +132,7 @@ fn rejected_shrinks_would_have_broken_three_connectivity() {
         for _ in 0..60 {
             let live = map.live_edge_ids();
             let e = live[1 + rng.below(live.len() as u32 - 1) as usize];
-            if let Some(mv) = grow_near(&map, e, &mut rng) {
+            if let Some(mv) = grow_near(&map, &solved(&map), e, Grow::Any, 0.0, &mut rng) {
                 apply(&mut map, mv);
             }
         }

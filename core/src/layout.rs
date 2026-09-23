@@ -1,6 +1,27 @@
 use crate::geometry::Square;
 use crate::map::{edge_of, twin, Map, POLE};
 
+/// Why a layout was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reject {
+    /// The square on this edge is thinner than the floor.
+    Thin(u32),
+    CrossAtVertex,
+    CrossBetweenVertices,
+    Runs,
+}
+
+impl Reject {
+    pub fn name(self) -> &'static str {
+        match self {
+            Reject::Thin(_) => "thin square",
+            Reject::CrossAtVertex => "cross at a vertex",
+            Reject::CrossBetweenVertices => "cross between vertices",
+            Reject::Runs => "runs not contiguous",
+        }
+    }
+}
+
 /// Place every square from the potentials. Returns None when some square
 /// would be thinner than `min_side`, when four squares meet at a point, or
 /// when the up and down edges at a vertex do not form two contiguous runs,
@@ -9,7 +30,14 @@ use crate::map::{edge_of, twin, Map, POLE};
 /// A cross is either an up boundary and a down boundary at one vertex within
 /// `min_side` of each other, or two vertices at the same potential whose
 /// segments abut end to end.
-pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64)> {
+/// `cross_eps` is the coincidence tolerance for crosses; only exact ties are
+/// combinatorially a cross, so it stays tiny.
+pub fn layout(
+    map: &Map,
+    pot: &[f64],
+    min_side: f64,
+    cross_eps: f64,
+) -> Result<(Vec<Square>, f64), Reject> {
     let nv = map.vertex_capacity();
     let mut down: Vec<Vec<u32>> = vec![Vec::new(); nv];
     let mut up: Vec<Vec<u32>> = vec![Vec::new(); nv];
@@ -43,8 +71,8 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
                 }
             })
             .collect();
-        if class.contains(&3) {
-            return None;
+        if let Some(i) = class.iter().position(|&c| c == 3) {
+            return Err(Reject::Thin(edge_of(star[i])));
         }
         let n = star.len();
         let mut ups = Vec::new();
@@ -74,14 +102,14 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
         };
         if v == source {
             if !ups.is_empty() || downs.is_empty() {
-                return None;
+                return Err(Reject::Runs);
             }
         } else if v == sink {
             if !downs.is_empty() || ups.is_empty() {
-                return None;
+                return Err(Reject::Runs);
             }
         } else if ups.is_empty() || downs.is_empty() || transitions != 2 {
-            return None;
+            return Err(Reject::Runs);
         }
         if !ups.is_empty() {
             let s = start_of(&ups, 1);
@@ -112,7 +140,7 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
     for &v in &order {
         let mut x = left[v as usize];
         if x.is_nan() {
-            return None;
+            return Err(Reject::Runs);
         }
         for &h in &down[v as usize] {
             let m = map.dest(h);
@@ -142,8 +170,8 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
             let sd = &squares[edge_of(downs[j]) as usize];
             let bu = su.x + su.side;
             let bd = sd.x + sd.side;
-            if (bu - bd).abs() < min_side {
-                return None;
+            if (bu - bd).abs() < cross_eps {
+                return Err(Reject::CrossAtVertex);
             }
             if bu < bd {
                 i += 1;
@@ -170,11 +198,11 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
         let a = order[i] as usize;
         for j in (i + 1)..order.len() {
             let b = order[j] as usize;
-            if pot[b] - pot[a] >= min_side {
+            if pot[b] - pot[a] >= cross_eps {
                 break;
             }
-            if (right[a] - left[b]).abs() < min_side || (right[b] - left[a]).abs() < min_side {
-                return None;
+            if (right[a] - left[b]).abs() < cross_eps || (right[b] - left[a]).abs() < cross_eps {
+                return Err(Reject::CrossBetweenVertices);
             }
         }
     }
@@ -183,5 +211,5 @@ pub fn layout(map: &Map, pot: &[f64], min_side: f64) -> Option<(Vec<Square>, f64
         .map(|&h| pot[map.dest(h) as usize])
         .sum();
     squares.retain(|s| s.id != POLE && s.side > 0.0);
-    Some((squares, width))
+    Ok((squares, width))
 }

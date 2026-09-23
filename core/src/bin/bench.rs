@@ -40,18 +40,55 @@ fn main() {
         t0.elapsed().as_secs_f64() * 1e3
     );
 
+    let env = |k: &str, d: f64| -> f64 {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
+    let dflt = Params::default();
     let params = Params {
         squares: n,
         refine_steps: refine,
-        ..Params::default()
+        thin_weight: env("SQ_THIN", dflt.thin_weight),
+        soft_px: env("SQ_SOFT", dflt.soft_px),
+        candidates: env("SQ_CAND", dflt.candidates as f64) as usize,
+        temp_start: env("SQ_T0", dflt.temp_start),
+        temp_end: env("SQ_T1", dflt.temp_end),
+        ..dflt
     };
     let t1 = Instant::now();
     let mut s = Search::new(target, params, seed);
     let mut steps = 0;
-    while s.stage() == Stage::Growing {
+    while s.stage() == Stage::Seeding && steps < 100_000 {
         s.step();
         steps += 1;
     }
+    println!(
+        "seed {} squares in {:.1}ms ({} steps) crop={:.3} width={:.3}",
+        s.squares().len(),
+        t1.elapsed().as_secs_f64() * 1e3,
+        steps,
+        s.crop(),
+        s.width()
+    );
+    let mut next_mark = 100;
+    while s.stage() == Stage::Growing && steps < 20_000 {
+        s.step();
+        steps += 1;
+        if s.squares().len() >= next_mark {
+            println!(
+                "  grow {:>5} squares {:>8.1}ms {} solves crop={:.3}",
+                s.squares().len(),
+                t1.elapsed().as_secs_f64() * 1e3,
+                s.solves,
+                s.crop()
+            );
+            next_mark += 100;
+        }
+    }
+    println!("rejections after growth: {:?}", s.rejections);
+    s.rejections.clear();
     let grow_ms = t1.elapsed().as_secs_f64() * 1e3;
     println!(
         "grow {} squares in {:.1}ms ({} steps, {} solves, {:.1} cg iters/solve) mse={:.5} crop={:.3} width={:.3}",
@@ -97,11 +134,37 @@ fn main() {
         s.mse(),
         s.crop()
     );
+    println!("rejections after refine: {:?}", s.rejections);
     let colors = s.colors();
     std::fs::write(
         &out,
         svg::render(s.squares(), &colors, s.width(), 0.0, None),
     )
     .unwrap();
-    println!("wrote {}", out);
+    let png = out.replace(".svg", ".png");
+    let ph = 640u32;
+    let pw = (ph as f64 * s.width()).round() as u32;
+    let mut img = image::RgbImage::new(pw, ph);
+    for (sq, c) in s.squares().iter().zip(&colors) {
+        let x0 = (sq.x * ph as f64).round() as u32;
+        let y0 = (sq.y * ph as f64).round() as u32;
+        let x1 = ((sq.x + sq.side) * ph as f64).round().min(pw as f64) as u32;
+        let y1 = ((sq.y + sq.side) * ph as f64).round().min(ph as f64) as u32;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                img.put_pixel(x, y, image::Rgb(*c));
+            }
+        }
+    }
+    img.save(&png).unwrap();
+    let sides: Vec<f64> = s
+        .squares()
+        .iter()
+        .map(|q| q.side * s.target().height as f64)
+        .collect();
+    let min = sides.iter().cloned().fold(f64::MAX, f64::min);
+    let max = sides.iter().cloned().fold(0.0, f64::max);
+    let thin = sides.iter().filter(|&&v| v < 3.0).count();
+    println!("sides px: min {:.2} max {:.1} under 3px {}", min, max, thin);
+    println!("wrote {} and {}", out, png);
 }

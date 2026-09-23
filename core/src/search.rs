@@ -1,19 +1,27 @@
 use crate::geometry::Square;
-use crate::layout::layout;
+use crate::layout::{layout, Reject};
 use crate::map::{Map, POLE};
-use crate::moves::{apply, grow_near, shrink, Move};
+use crate::moves::{apply, grow_near, shrink, Grow, Move};
 use crate::rng::Rng;
 use crate::seed::seed_map;
 use crate::solve::solve;
 use crate::target::{Frame, Target};
+
+/// Tiling units; the tiling is 1 tall.
+const CROSS_EPS: f64 = 1e-7;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
     pub squares: usize,
     /// Largest fraction of the cropped dimension that may be cut away.
     pub crop_max: f64,
-    /// Smallest square side in pixels of the target.
-    pub min_side_px: f64,
+    /// Squares thinner than this many target pixels are rejected outright.
+    pub floor_px: f64,
+    /// Squares thinner than this many target pixels are penalized, more the
+    /// thinner they get.
+    pub soft_px: f64,
+    /// Cost of one fully collapsed square, in units of the seed error per square.
+    pub thin_weight: f64,
     /// Growth candidates evaluated per added square.
     pub candidates: usize,
     /// Compound moves in the refinement stage.
@@ -27,7 +35,9 @@ impl Default for Params {
         Params {
             squares: 300,
             crop_max: 0.03,
-            min_side_px: 1.0,
+            floor_px: 0.75,
+            soft_px: 3.0,
+            thin_weight: 4.0,
             candidates: 3,
             refine_steps: 4000,
             temp_start: 0.3,
@@ -36,8 +46,21 @@ impl Default for Params {
     }
 }
 
+/// The vertex that exists in `after` but not in `before`.
+fn new_vertex(before: &Map, after: &Map) -> u32 {
+    (0..after.vertex_capacity() as u32)
+        .rev()
+        .find(|&x| {
+            after.vertex_alive(x)
+                && (x as usize >= before.vertex_capacity() || !before.vertex_alive(x))
+        })
+        .expect("a split always creates a vertex")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
+    /// Random growth that only steers the aspect ratio into the crop band.
+    Seeding,
     Growing,
     Refining,
     Done,
@@ -70,6 +93,8 @@ pub struct Search {
     pub solver_iters: usize,
     pub solves: usize,
     pub last_move: Option<Move>,
+    /// Counts of rejected candidates by reason, for the bench.
+    pub rejections: Vec<(&'static str, usize)>,
 }
 
 impl Search {
@@ -95,13 +120,14 @@ impl Search {
                 mse: 0.0,
                 cost: 0.0,
             },
-            stage: Stage::Growing,
+            stage: Stage::Seeding,
             refine_done: 0,
             accepted: 0,
             penalty_scale: 1.0,
             solver_iters: 0,
             solves: 0,
             last_move: None,
+            rejections: Vec::new(),
         };
         let st = s.evaluate(map, &mut pot).expect("seed tiling is valid");
         s.penalty_scale = st.mse.max(1e-6);
@@ -145,28 +171,69 @@ impl Search {
         &self.target
     }
 
-    fn min_side(&self) -> f64 {
-        // Tiling height is 1, mapped onto frame.scale pixels.
-        self.params.min_side_px / self.state.frame.scale.max(1.0)
+    /// Tiling units per target pixel. The tiling is 1 tall and maps onto at
+    /// most the image height.
+    fn px(&self) -> f64 {
+        1.0 / self.target.height as f64
     }
 
-    fn evaluate(&mut self, map: Map, pot: &mut Vec<f64>) -> Option<State> {
-        let iters = solve(&map, pot, 1e-12, 20_000);
-        self.solver_iters += iters;
-        self.solves += 1;
-        let min_side = self.min_side();
-        let (squares, width) = layout(&map, pot, min_side)?;
+    /// Solve and lay out the map. A square thinner than the floor is healed
+    /// by contracting or deleting its edge, a few times over, because a
+    /// sliver is a cross in the making and removing it barely moves anything.
+    fn evaluate(&mut self, mut map: Map, pot: &mut Vec<f64>) -> Option<State> {
+        let px = self.px();
+        let (squares, width) = loop {
+            let iters = solve(&map, pot, 1e-12, 20_000);
+            self.solver_iters += iters;
+            self.solves += 1;
+            match layout(&map, pot, self.params.floor_px * px, CROSS_EPS) {
+                Ok(v) => break v,
+                Err(Reject::Thin(e)) => {
+                    if map.edge_count() - 1 < 9 {
+                        self.reject("thin square");
+                        return None;
+                    }
+                    let mut healed = false;
+                    for mv in [Move::Contract { e }, Move::Delete { e }] {
+                        let mut trial = map.clone();
+                        if apply(&mut trial, mv) {
+                            map = trial;
+                            healed = true;
+                            break;
+                        }
+                    }
+                    if !healed {
+                        self.reject("thin square");
+                        return None;
+                    }
+                    self.reject("healed");
+                }
+                Err(r) => {
+                    self.reject(r.name());
+                    return None;
+                }
+            }
+        };
         let frame = self.target.frame(width);
         let mut errs = vec![0.0; map.edge_capacity()];
         let mut total = 0.0;
+        let soft = self.params.soft_px * px;
+        let mut thin = 0.0;
         for s in &squares {
             let e = self.target.error(s, &frame);
             errs[s.id as usize] = e;
             total += e;
+            if s.side < soft {
+                let d = (soft - s.side) / soft;
+                thin += d * d;
+            }
         }
         let mse = total / self.target.pixels();
         let excess = (frame.crop - self.params.crop_max).max(0.0);
-        let cost = mse + self.penalty_scale * 10.0 * excess / self.params.crop_max;
+        let per_square = self.penalty_scale / self.params.squares as f64;
+        let cost = mse
+            + self.penalty_scale * 10.0 * excess / self.params.crop_max
+            + per_square * self.params.thin_weight * thin;
         Some(State {
             map,
             pot: pot.clone(),
@@ -177,6 +244,13 @@ impl Search {
             mse,
             cost,
         })
+    }
+
+    fn reject(&mut self, reason: &'static str) {
+        match self.rejections.iter_mut().find(|(r, _)| *r == reason) {
+            Some((_, n)) => *n += 1,
+            None => self.rejections.push((reason, 1)),
+        }
     }
 
     fn pick_weighted(&mut self, weights: &[f64]) -> Option<u32> {
@@ -202,6 +276,25 @@ impl Search {
         self.pick_weighted(&errs)
     }
 
+    /// A square chosen by how far it falls below the comfortable size.
+    fn pick_thin(&mut self) -> Option<u32> {
+        let soft = self.params.soft_px * self.px();
+        let mut w = vec![0.0; self.state.map.edge_capacity()];
+        let mut any = false;
+        for s in &self.state.squares {
+            if s.side < soft {
+                let d = (soft - s.side) / soft;
+                w[s.id as usize] = d * d;
+                any = true;
+            }
+        }
+        if any {
+            self.pick_weighted(&w)
+        } else {
+            None
+        }
+    }
+
     fn pick_uniform_edge(&mut self) -> u32 {
         loop {
             let e = self.rng.below(self.state.map.edge_capacity() as u32);
@@ -222,14 +315,7 @@ impl Search {
         }
         if let Move::Split { h_start, .. } = mv {
             let v = self.state.map.origin(h_start);
-            let v2 = map.vertex_capacity() as u32 - 1;
-            let v2 = if map.vertex_alive(v2) && !self.state.map.vertex_alive(v2) {
-                v2
-            } else {
-                (0..map.vertex_capacity() as u32)
-                    .find(|&x| map.vertex_alive(x) && !self.state.map.vertex_alive(x))
-                    .unwrap()
-            };
+            let v2 = new_vertex(&self.state.map, &map);
             pot[v2 as usize] = pot[v as usize];
         }
         self.evaluate(map, &mut pot)
@@ -238,10 +324,44 @@ impl Search {
     /// One unit of work. Returns true when the visible tiling changed.
     pub fn step(&mut self) -> bool {
         match self.stage {
+            Stage::Seeding => self.seed_step(),
             Stage::Growing => self.grow_step(),
             Stage::Refining => self.refine_step(),
             Stage::Done => false,
         }
+    }
+
+    /// Add one square anywhere, preferring the kind that moves the ratio the
+    /// right way, until the tiling sits in the crop band or the seeding budget
+    /// runs out. Image error plays no part here.
+    fn seed_step(&mut self) -> bool {
+        let budget = (self.params.squares / 3).clamp(9, 40);
+        if self.in_band() || self.state.map.edge_count() - 1 >= budget {
+            self.stage = Stage::Growing;
+            return false;
+        }
+        let kind = self.direction();
+        for attempt in 0..16 {
+            let e = self.pick_uniform_edge();
+            let k = if attempt < 8 { kind } else { Grow::Any };
+            let Some(mv) = grow_near(
+                &self.state.map,
+                &self.state.pot,
+                e,
+                k,
+                self.params.soft_px * self.px(),
+                &mut self.rng,
+            ) else {
+                continue;
+            };
+            if let Some(st) = self.try_move(mv) {
+                self.state = st;
+                self.last_move = Some(mv);
+                self.accepted += 1;
+                return true;
+            }
+        }
+        false
     }
 
     fn grow_step(&mut self) -> bool {
@@ -249,16 +369,30 @@ impl Search {
             self.stage = Stage::Refining;
             return false;
         }
+        let kind = self.direction();
         let mut best: Option<(State, Move)> = None;
-        for attempt in 0..8 {
-            let e = if attempt < 4 {
+        let mut tried = 0;
+        for attempt in 0..24 {
+            if tried >= self.params.candidates && best.is_some() {
+                break;
+            }
+            let e = if attempt < 16 {
                 self.pick_by_error()
             } else {
                 None
             }
             .unwrap_or_else(|| self.pick_uniform_edge());
-            for _ in 0..self.params.candidates {
-                let Some(mv) = grow_near(&self.state.map, e, &mut self.rng) else {
+            let k = if attempt % 2 == 0 { kind } else { Grow::Any };
+            for _ in 0..1 {
+                tried += 1;
+                let Some(mv) = grow_near(
+                    &self.state.map,
+                    &self.state.pot,
+                    e,
+                    k,
+                    self.params.soft_px * self.px(),
+                    &mut self.rng,
+                ) else {
                     continue;
                 };
                 if let Some(st) = self.try_move(mv) {
@@ -266,9 +400,6 @@ impl Search {
                         best = Some((st, mv));
                     }
                 }
-            }
-            if best.is_some() {
-                break;
             }
         }
         match best {
@@ -296,12 +427,18 @@ impl Search {
             return false;
         }
         self.refine_done += 1;
-        let er = self.pick_uniform_edge();
+        let er = if self.rng.below(2) == 0 {
+            self.pick_thin().unwrap_or_else(|| self.pick_uniform_edge())
+        } else {
+            self.pick_uniform_edge()
+        };
         let Some(m1) = shrink(&self.state.map, er, &mut self.rng) else {
+            self.reject("no shrink at edge");
             return false;
         };
         let mut map = self.state.map.clone();
         if !apply(&mut map, m1) {
+            self.reject("shrink breaks 3-connectivity");
             return false;
         }
         let mut errs = self.state.errs.clone();
@@ -312,15 +449,28 @@ impl Search {
         if !map.edge_alive(ea) {
             return false;
         }
-        let Some(m2) = grow_near(&map, ea, &mut self.rng) else {
+        let kind = if self.rng.below(2) == 0 {
+            self.direction()
+        } else {
+            Grow::Any
+        };
+        let Some(m2) = grow_near(
+            &map,
+            &self.state.pot,
+            ea,
+            kind,
+            self.params.soft_px * self.px(),
+            &mut self.rng,
+        ) else {
+            self.reject("no growth near edge");
             return false;
         };
-        let before = map.vertex_capacity();
         let split_from = if let Move::Split { h_start, .. } = m2 {
             Some(map.origin(h_start))
         } else {
             None
         };
+        let before = map.clone();
         if !apply(&mut map, m2) {
             return false;
         }
@@ -329,12 +479,7 @@ impl Search {
             pot.resize(map.vertex_capacity(), 0.5);
         }
         if let Some(v) = split_from {
-            let v2 = (0..map.vertex_capacity() as u32)
-                .rev()
-                .find(|&x| {
-                    map.vertex_alive(x) && (x as usize >= before || !self.state.map.vertex_alive(x))
-                })
-                .unwrap();
+            let v2 = new_vertex(&before, &map);
             pot[v2 as usize] = pot[v as usize];
         }
         let Some(st) = self.evaluate(map, &mut pot) else {
@@ -347,8 +492,23 @@ impl Search {
             self.state = st;
             self.last_move = Some(m2);
             self.accepted += 1;
+        } else {
+            self.reject("worse");
         }
         accept
+    }
+
+    /// Which way the aspect ratio must move to land inside the crop band.
+    fn direction(&self) -> Grow {
+        let r0 = self.target.width as f64 / self.target.height as f64;
+        let w = self.state.width;
+        if w < r0 * (1.0 - self.params.crop_max) {
+            Grow::Widen
+        } else if w > r0 / (1.0 - self.params.crop_max) {
+            Grow::Narrow
+        } else {
+            Grow::Any
+        }
     }
 
     pub fn in_band(&self) -> bool {
