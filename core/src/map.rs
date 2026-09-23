@@ -203,6 +203,22 @@ impl Map {
         self.f_half[f as usize]
     }
 
+    /// Outgoing half-edges of `v` in clockwise order, without allocating.
+    pub fn star_iter(&self, v: u32) -> impl Iterator<Item = u32> + '_ {
+        let start = self.v_half[v as usize];
+        let mut h = start;
+        let mut first = true;
+        std::iter::from_fn(move || {
+            if !first && h == start {
+                return None;
+            }
+            first = false;
+            let out = h;
+            h = self.rot(h);
+            Some(out)
+        })
+    }
+
     /// Outgoing half-edges of `v` in clockwise order.
     pub fn star(&self, v: u32) -> Vec<u32> {
         let start = self.v_half[v as usize];

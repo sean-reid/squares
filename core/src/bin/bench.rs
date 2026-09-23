@@ -73,8 +73,19 @@ fn main() {
         s.width()
     );
     let mut next_mark = 100;
+    let verify = std::env::var("SQ_VERIFY").is_ok();
+    let mut worst = 0.0f64;
     while s.stage() == Stage::Growing && steps < 20_000 {
-        s.step();
+        if s.step() && verify {
+            let d = s.verify();
+            if d > worst {
+                worst = d;
+                println!(
+                    "  verify step {} drift {:.3e} last move {:?}",
+                    steps, d, s.last_move
+                );
+            }
+        }
         steps += 1;
         if s.squares().len() >= next_mark {
             println!(
@@ -91,12 +102,12 @@ fn main() {
     s.rejections.clear();
     let grow_ms = t1.elapsed().as_secs_f64() * 1e3;
     println!(
-        "grow {} squares in {:.1}ms ({} steps, {} solves, {:.1} cg iters/solve) mse={:.5} crop={:.3} width={:.3}",
+        "grow {} squares in {:.1}ms ({} steps, {} factorizations, {} quick solves) mse={:.5} crop={:.3} width={:.3}",
         s.squares().len(),
         grow_ms,
         steps,
+        s.factorizations,
         s.solves,
-        s.solver_iters as f64 / s.solves.max(1) as f64,
         s.mse(),
         s.crop(),
         s.width()
@@ -104,7 +115,7 @@ fn main() {
 
     let t2 = Instant::now();
     let solves_before = s.solves;
-    let iters_before = s.solver_iters;
+    let factor_before = s.factorizations;
     let mut k = 0;
     let mut next_report = refine / 10;
     while s.stage() == Stage::Refining {
@@ -125,16 +136,82 @@ fn main() {
     let refine_ms = t2.elapsed().as_secs_f64() * 1e3;
     let solves = s.solves - solves_before;
     println!(
-        "refine {} steps in {:.1}ms ({} solves, {:.3}ms/solve, {:.1} cg iters/solve) mse={:.5} crop={:.3}",
+        "refine {} steps in {:.1}ms ({} factorizations, {} quick solves) mse={:.5} crop={:.3}",
         k,
         refine_ms,
+        s.factorizations - factor_before,
         solves,
-        refine_ms / solves.max(1) as f64,
-        (s.solver_iters - iters_before) as f64 / solves.max(1) as f64,
         s.mse(),
         s.crop()
     );
     println!("rejections after refine: {:?}", s.rejections);
+    if std::env::var("SQ_MICRO").is_ok() {
+        use squares_core::layout::layout;
+        use squares_core::solve::{Delta, Solver, Update};
+        let map = s.map().clone();
+        let mut pot = Vec::new();
+        let t = Instant::now();
+        for _ in 0..20 {
+            Solver::new(&map).potentials(&mut pot);
+        }
+        println!(
+            "micro factor+solve {:.3}ms (n={})",
+            t.elapsed().as_secs_f64() * 1e3 / 20.0,
+            Solver::new(&map).dimension()
+        );
+        let solver = Solver::new(&map);
+        let e = map.live_edge_ids()[5];
+        let up = Update {
+            u: map.origin(2 * e),
+            v: map.dest(2 * e),
+            sign: -1.0,
+        };
+        let t = Instant::now();
+        for _ in 0..200 {
+            solver.updated(
+                &Delta {
+                    updates: vec![up],
+                    split: None,
+                    contract: None,
+                },
+                &mut pot,
+            );
+        }
+        println!(
+            "micro quick solve {:.3}ms",
+            t.elapsed().as_secs_f64() * 1e3 / 200.0
+        );
+        let t = Instant::now();
+        for _ in 0..200 {
+            let _ = layout(&map, &pot, 1e-6, 1e-7);
+        }
+        println!(
+            "micro layout {:.3}ms",
+            t.elapsed().as_secs_f64() * 1e3 / 200.0
+        );
+        let t = Instant::now();
+        for _ in 0..200 {
+            let c = map.clone();
+            std::hint::black_box(c);
+        }
+        println!(
+            "micro map clone {:.3}ms",
+            t.elapsed().as_secs_f64() * 1e3 / 200.0
+        );
+        let frame = s.target().frame(s.width());
+        let t = Instant::now();
+        for _ in 0..200 {
+            let mut acc = 0.0;
+            for sq in s.squares() {
+                acc += s.target().error(sq, &frame);
+            }
+            std::hint::black_box(acc);
+        }
+        println!(
+            "micro error {:.3}ms",
+            t.elapsed().as_secs_f64() * 1e3 / 200.0
+        );
+    }
     let colors = s.colors();
     std::fs::write(
         &out,
