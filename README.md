@@ -15,8 +15,10 @@ Rust stable with the `wasm32-unknown-unknown` target, `wasm-pack`, Node 24, and 
 
 ```
 cd core && cargo test
-cd web && pnpm install && pnpm dev
+cd web && pnpm install && pnpm wasm && pnpm dev
 ```
+
+`pnpm wasm` compiles the core to WebAssembly into `web/src/wasm`, `pnpm test:e2e` runs the Playwright suite against a production build, and `pnpm icons` regenerates the favicon and preview image from the seed tiling.
 
 ## License
 
