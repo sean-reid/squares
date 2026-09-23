@@ -1,0 +1,28 @@
+[package]
+name = "squares-core"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+cli = ["image"]
+wasm = ["wasm-bindgen"]
+
+[dependencies]
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+wasm-bindgen = { version = "0.2", optional = true }
+
+
+[[bin]]
+name = "bench"
+required-features = ["cli"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
