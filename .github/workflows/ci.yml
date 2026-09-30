@@ -99,7 +99,7 @@ jobs:
         working-directory: web
       - run: pnpm build
         working-directory: web
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_ACCESS_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
