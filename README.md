@@ -2,7 +2,7 @@
 
 Drop in a photo and get it back as a simple squared rectangle: a rectangle tiled by squares where no group of squares forms a smaller rectangle. Square sizes fall out of Kirchhoff's laws on a planar network, so the search picks arrangements, not sizes, and colors each square with the mean of the photo underneath.
 
-Live at https://squares.dwainosaur.com. Everything runs in the browser. Nothing is uploaded.
+Live at https://squares.seanre.id. Everything runs in the browser. Nothing is uploaded.
 
 ## Layout
 
