@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/sean-reid/squares/compare/v0.1.2...v0.2.0) (2026-11-26)
+
+
+### Features
+
+* serve the site from squares.seanre.id ([#24](https://github.com/sean-reid/squares/issues/24)) ([41975c1](https://github.com/sean-reid/squares/commit/41975c1e48eedc10dce772202fded634a88d9360))
+
 ## [0.1.2](https://github.com/sean-reid/squares/compare/v0.1.1...v0.1.2) (2026-09-23)
 
 
